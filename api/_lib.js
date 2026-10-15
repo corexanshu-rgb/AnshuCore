@@ -1,19 +1,21 @@
 import crypto from 'node:crypto';
 import { DEFAULTS } from './_defaults.js';
 
-const URL_ = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
-const TOK = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
+const E = process.env;
+const pick = (re) => { const k = Object.keys(E).find((x) => re.test(x) && !/READ_ONLY/.test(x)); return k ? E[k] : undefined; };
+const URL_ = E.UPSTASH_REDIS_REST_URL || E.KV_REST_API_URL || pick(/REST(_API)?_URL$/);
+const TOK = E.UPSTASH_REDIS_REST_TOKEN || E.KV_REST_API_TOKEN || pick(/REST(_API)?_TOKEN$/);
 const mem = globalThis.__mem || (globalThis.__mem = { s: new Map(), h: new Map() });
 export const hasDb = !!URL_;
 
 export async function db(...c) {
   if (URL_) {
     const r = await fetch(URL_, { method: 'POST', headers: { Authorization: 'Bearer ' + TOK, 'Content-Type': 'application/json' }, body: JSON.stringify(c) });
-    const j = await r.json();
-    if (j.error) throw new Error(j.error);
+    const j = await r.json().catch(() => ({ error: 'Database returned an invalid response' }));
+    if (j.error) throw new Error('Database error: ' + j.error);
     return j.result;
   }
-  if (process.env.VERCEL) throw new Error('Database is not connected');
+  if (process.env.VERCEL) throw new Error('Database is not connected. Connect Upstash Redis in Vercel Storage and redeploy.');
   const [op, k, ...a] = c;
   if (op === 'GET') return mem.s.get(k) ?? null;
   if (op === 'SET') { mem.s.set(k, a[0]); return 'OK'; }

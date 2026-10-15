@@ -13,6 +13,6 @@ export default async function handler(req, res) {
     await db('HSET', 'rat', id, JSON.stringify({ id, ts: Date.now(), name, stars, text, approved: false }));
     send(res, 200, { ok: true });
   } catch (e) {
-    send(res, 500, { error: 'Could not save your review. Please try again.' });
+    send(res, 500, { error: /Database|Upstash/i.test(e.message) ? 'The site database is not connected yet. Please contact the site owner.' : 'Could not save your review. Please try again.' });
   }
 }

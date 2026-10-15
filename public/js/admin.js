@@ -26,15 +26,17 @@ async function act(action, body) { try { await api('/api/admin?action=' + action
 
 async function boot() {
   let me;
-  try { me = await api('/api/admin?action=me'); } catch { me = {}; }
+  try { me = await api('/api/admin?action=me'); } catch (e) { me = { fail: e.message }; }
   STATE = me;
+  if (me.fail || me.admin === undefined) return app.innerHTML = `<div class="lg"><div class="fm" style="max-width:480px"><h3>Cannot reach the server</h3><p class="sub" style="margin-top:8px">The /api functions did not respond. In Vercel check that the latest deployment finished, the project root contains the api folder, and Framework Preset is Other.</p><button class="btn p" style="margin-top:16px" onclick="location.reload()">Retry</button></div></div>`;
   if (!me.admin) return login();
-  try { const d = await api('/api/admin?action=data'); S = d.site; REQ = d.requests; RAT = d.ratings; } catch (e) { return login(); }
+  try { const d = await api('/api/admin?action=data'); S = d.site; REQ = d.requests; RAT = d.ratings; if (d.dbError) STATE.dbErr = d.dbError; }
+  catch (e) { if (e.status === 401) return login(); return app.innerHTML = `<div class="lg"><div class="fm" style="max-width:480px"><h3>Could not load data</h3><p class="sub" style="margin-top:8px">${esc(e.message)}</p><button class="btn p" style="margin-top:16px" onclick="location.reload()">Retry</button></div></div>`; }
   draw();
 }
 function login() {
   app.innerHTML = `<div class="lg"><form class="fm a" id="lf" style="width:100%;max-width:400px"><div class="brand" style="margin-bottom:12px">${LOGO}AnshuCore</div><h3>Admin sign in</h3>
-${STATE.configured === false ? '<div class="wn" style="margin-top:12px">Admin login is not configured. Add ADMIN_EMAIL, ADMIN_PASSWORD and SESSION_SECRET in Vercel environment variables and redeploy.</div>' : ''}
+<ul class="ft" style="margin:12px 0 0;font-size:13.5px"><li>${mi(STATE.configured ? 'check_circle' : 'error_outline')}Admin variables: ${STATE.configured ? 'set' : 'missing (ADMIN_EMAIL, ADMIN_PASSWORD, SESSION_SECRET)'}</li><li>${mi(STATE.db ? 'check_circle' : 'error_outline')}Database: ${STATE.db ? 'connected' : 'not connected'}</li></ul>${STATE.db === false && STATE.dbErr ? `<p class="sub" style="font-size:12.5px;margin-top:6px">${esc(STATE.dbErr)}</p>` : ''}
 <label for="le">Email</label><input id="le" type="email" autocomplete="username" required><label for="lp">Password</label><input id="lp" type="password" autocomplete="current-password" required><p id="lx" style="color:#B91C1C;font-size:13px;margin-top:10px"></p><button class="btn p" style="width:100%;margin-top:14px" type="submit">Sign in</button></form></div>`;
   $('#lf').onsubmit = async (e) => {
     e.preventDefault();
@@ -84,7 +86,7 @@ function draw() {
   const nw = REQ.filter((r) => r.status === 'New').length, T = TABS.find((t) => t[0] === tab) || TABS[0];
   if (!TABS.find((t) => t[0] === tab)) tab = 'dash';
   app.innerHTML = `<div class="ad"><aside class="sb"><a class="brand" href="/">${LOGO}AnshuCore</a>${TABS.map((t) => `<a href="#${t[0]}" data-t="${t[0]}" class="${t[0] === tab ? 'on' : ''}">${mi(t[2])}${t[1]}${t[0] === 'req' && nw ? `<span class="bd">${nw}</span>` : ''}${t[0] === 'rat' && RAT.some((r) => !r.approved) ? `<span class="bd">${RAT.filter((r) => !r.approved).length}</span>` : ''}</a>`).join('')}</aside>
-<main class="mn"><div class="tp"><h1>${T[1]}</h1><div class="row"><button class="btn s" id="rf">${mi('refresh')}Refresh</button><a class="btn s" href="/" target="_blank">${mi('open_in_new')}View site</a><button class="btn s" id="lo">Sign out</button></div></div>${STATE.db === false ? '<div class="wn">Database is not connected. Connect Upstash Redis in Vercel, otherwise changes and requests cannot be saved.</div>' : ''}${view()}</main></div>`;
+<main class="mn"><div class="tp"><h1>${T[1]}</h1><div class="row"><button class="btn s" id="rf">${mi('refresh')}Refresh</button><a class="btn s" href="/" target="_blank">${mi('open_in_new')}View site</a><button class="btn s" id="lo">Sign out</button></div></div>${STATE.db === false || STATE.dbErr ? `<div class="wn">Database is not connected, so requests and changes cannot be saved. Connect Upstash Redis in Vercel Storage and redeploy.${STATE.dbErr ? ' (' + esc(STATE.dbErr) + ')' : ''}</div>` : ''}${view()}</main></div>`;
   bind();
 }
 /* ---------- modal editor ---------- */

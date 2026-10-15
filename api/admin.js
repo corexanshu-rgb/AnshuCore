@@ -5,19 +5,25 @@ export default async function handler(req, res) {
   const b = body(req);
   try {
     if (action === 'login' && req.method === 'POST') {
-      if (!(await limit('rl:login:' + ip(req), 8, 600))) return send(res, 429, { error: 'Too many attempts. Try again in a few minutes.' });
+      try { if (!(await limit('rl:login:' + ip(req), 8, 600))) return send(res, 429, { error: 'Too many attempts. Try again in a few minutes.' }); } catch {}
       if (!checkLogin(b.email || '', b.password || '')) return send(res, 401, { error: 'Incorrect email or password.' });
       res.setHeader('Set-Cookie', sessionCookie(true));
       return send(res, 200, { ok: true });
     }
     if (action === 'logout') { res.setHeader('Set-Cookie', sessionCookie(false)); return send(res, 200, { ok: true }); }
-    if (action === 'me') return send(res, 200, { admin: isAdmin(req), db: hasDb, configured: !!(process.env.ADMIN_EMAIL && process.env.ADMIN_PASSWORD && process.env.SESSION_SECRET) });
+    if (action === 'me') {
+      let dbOk = false, dbErr = '';
+      try { await db('GET', 'ping'); dbOk = true; } catch (e) { dbErr = e.message; }
+      return send(res, 200, { admin: isAdmin(req), db: dbOk, dbErr, configured: !!(process.env.ADMIN_EMAIL && process.env.ADMIN_PASSWORD && process.env.SESSION_SECRET) });
+    }
     if (!isAdmin(req)) return send(res, 401, { error: 'Not signed in' });
 
     if (action === 'data' && req.method === 'GET') {
-      const [site, requests, ratings] = await Promise.all([getSite(), hash('req'), hash('rat')]);
+      const site = await getSite();
+      let requests = [], ratings = [], dbError = '';
+      try { [requests, ratings] = await Promise.all([hash('req'), hash('rat')]); } catch (e) { dbError = e.message; }
       requests.sort((a, c) => c.ts - a.ts); ratings.sort((a, c) => c.ts - a.ts);
-      return send(res, 200, { site, requests, ratings });
+      return send(res, 200, { site, requests, ratings, dbError });
     }
     if (req.method !== 'POST') return send(res, 405, { error: 'Method not allowed' });
     if (action === 'save') {

@@ -25,6 +25,6 @@ export default async function handler(req, res) {
     await db('HSET', 'req', id, JSON.stringify(r));
     send(res, 200, { ok: true, id });
   } catch (e) {
-    send(res, 500, { error: 'Could not save your request. Please try again or email directly.' });
+    send(res, 500, { error: /Database|Upstash/i.test(e.message) ? 'The site database is not connected yet. Please contact the site owner.' : 'Could not save your request. Please try again or email directly.' });
   }
 }
