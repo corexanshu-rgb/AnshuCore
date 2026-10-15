@@ -1,11 +1,12 @@
-import { db, hash, getSite, cleanSite, checkLogin, sessionCookie, isAdmin, body, ip, limit, send, rid, clean, hasDb } from './_lib.js';
+import { db, hash, getSite, cleanSite, cleanApps, slugify, checkLogin, sessionCookie, isAdmin, body, ip, limit, send, rid, clean, hasDb } from './_lib.js';
 
 export default async function handler(req, res) {
   const action = String(req.query?.action || '');
   const b = body(req);
   try {
     if (action === 'login' && req.method === 'POST') {
-      try { if (!(await limit('rl:login:' + ip(req), 8, 600))) return send(res, 429, { error: 'Too many attempts. Try again in a few minutes.' }); } catch {}
+      const allowed = await limit('rl:login:' + ip(req), 8, 600, true);
+      if (!allowed) return send(res, 429, { error: 'Too many login attempts. Try again in a few minutes.' });
       if (!checkLogin(b.email || '', b.password || '')) return send(res, 401, { error: 'Incorrect email or password.' });
       res.setHeader('Set-Cookie', sessionCookie(true));
       return send(res, 200, { ok: true });
@@ -46,6 +47,70 @@ export default async function handler(req, res) {
       if (!r) return send(res, 404, { error: 'Not found' });
       r.approved = !!b.approved; await db('HSET', 'rat', r.id, JSON.stringify(r));
       return send(res, 200, { ok: true });
+    }
+    if (action === 'appSave') {
+      const site = await getSite();
+      const appData = b.app || {};
+      const name = clean(appData.name, 100);
+      if (!name) return send(res, 400, { error: 'Application name is required.' });
+
+      let apps = Array.isArray(site.apps) ? [...site.apps] : [];
+      const id = clean(appData.id, 50) || rid('app_');
+      const existingIdx = apps.findIndex((a) => a.id === id);
+
+      const updated = {
+        id,
+        name,
+        slug: slugify(appData.slug || name),
+        icon: clean(appData.icon, 300) || 'android',
+        shortDescription: clean(appData.shortDescription || appData.desc, 300),
+        category: clean(appData.category, 60) || 'General',
+        repositoryOwner: clean(appData.repositoryOwner, 60),
+        repositoryName: clean(appData.repositoryName, 100),
+        published: appData.published !== false,
+        featured: !!appData.featured,
+        relatedAppIds: Array.isArray(appData.relatedAppIds) ? appData.relatedAppIds.slice(0, 10).map((x) => clean(x, 50)).filter(Boolean) : [],
+        uses: Array.isArray(appData.uses) ? appData.uses.slice(0, 10).map((x) => clean(x, 150)).filter(Boolean) : [],
+        req: clean(appData.req, 100) || 'Android 7.0 or later',
+        createdAt: existingIdx >= 0 ? apps[existingIdx].createdAt : Date.now(),
+        updatedAt: Date.now()
+      };
+
+      if (existingIdx >= 0) apps[existingIdx] = updated;
+      else apps.push(updated);
+
+      site.apps = cleanApps(apps);
+      const cleaned = cleanSite(site);
+      const s = JSON.stringify(cleaned);
+      if (s.length > 900000) return send(res, 400, { error: 'Payload too large.' });
+      await db('SET', 'site', s);
+      return send(res, 200, { ok: true, site: cleaned, app: updated });
+    }
+    if (action === 'appDelete') {
+      const site = await getSite();
+      const id = String(b.id || '');
+      site.apps = (site.apps || []).filter((a) => a.id !== id);
+      const cleaned = cleanSite(site);
+      await db('SET', 'site', JSON.stringify(cleaned));
+      return send(res, 200, { ok: true, site: cleaned });
+    }
+    if (action === 'appTogglePublish') {
+      const site = await getSite();
+      const id = String(b.id || '');
+      const a = (site.apps || []).find((x) => x.id === id);
+      if (!a) return send(res, 404, { error: 'Application not found' });
+      a.published = !a.published;
+      const cleaned = cleanSite(site);
+      await db('SET', 'site', JSON.stringify(cleaned));
+      return send(res, 200, { ok: true, site: cleaned });
+    }
+    if (action === 'appSetFeatured') {
+      const site = await getSite();
+      const id = String(b.id || '');
+      (site.apps || []).forEach((a) => { a.featured = (a.id === id); });
+      const cleaned = cleanSite(site);
+      await db('SET', 'site', JSON.stringify(cleaned));
+      return send(res, 200, { ok: true, site: cleaned });
     }
     if (action === 'ratingDelete') { await db('HDEL', 'rat', String(b.id)); return send(res, 200, { ok: true }); }
     if (action === 'ratingAdd') {

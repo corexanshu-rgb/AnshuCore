@@ -11,8 +11,14 @@ export default async function handler(req, res) {
     const count = list.length;
     const avg = count ? list.reduce((a, r) => a + r.stars, 0) / count : 0;
     const items = list.slice(0, 40).map((r) => ({ id: r.id, name: r.name, stars: r.stars, text: r.text, ts: r.ts }));
+
+    const publicSite = {
+      ...site,
+      apps: (site.apps || []).filter((a) => a.published !== false)
+    };
+
     res.status(200).setHeader('Cache-Control', 's-maxage=5, stale-while-revalidate=30');
-    res.json({ site, ratings: { avg, count, dist, items } });
+    res.json({ site: publicSite, ratings: { avg, count, dist, items } });
   } catch (e) {
     send(res, 500, { error: 'Could not load site' });
   }

@@ -31,8 +31,7 @@ anshucore/
 
 - **Requests**: call, WhatsApp or email each request. "Not interested" deletes it.
 - **Ratings**: visitor ratings stay hidden until you approve them.
-- **Services / Why work with me / Projects / FAQ**: add, edit, delete and reorder.
-- **Android App**: enter your GitHub repository (`owner/repo`). Create a Release in GitHub and attach the `.apk`. The site shows the files and the GitHub download counts.
+- **Android Apps (APK Manager)**: manage a multi-application catalog. Add apps with custom icons, categories, factual descriptions, and GitHub repositories (`owner/repo`). The platform reads releases, versions, file sizes, and genuine GitHub asset download counts automatically. Configure related apps and designate one featured "Super APK".
 - **Social links**: paste a link and the icon is created automatically.
 - **About and Privacy**: edit the footer pages.
 - **Settings**: profile, photo, contact, home headline, budget presets and visible sections.

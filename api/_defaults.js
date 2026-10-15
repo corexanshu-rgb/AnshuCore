@@ -52,6 +52,25 @@ export const DEFAULTS = {
     { c: 'General', q: 'Do you build for libraries and schools only?', a: 'No. Libraries and schools are common projects, but I also build websites, web apps and dashboards for any business.' }
   ],
   social: [],
+  apps: [
+    {
+      id: 'app_anshucore',
+      slug: 'anshucore-app',
+      name: 'AnshuCore Android App',
+      icon: 'android',
+      shortDescription: 'Manage your requests and projects from your phone. Distributed directly from GitHub releases.',
+      category: 'Business & Management',
+      repositoryOwner: '',
+      repositoryName: '',
+      published: true,
+      featured: true,
+      relatedAppIds: [],
+      uses: ['Manage requests and projects on the go', 'Quick access to your dashboard', 'Direct updates through GitHub releases'],
+      req: 'Android 7.0 or later',
+      createdAt: 1729000000000,
+      updatedAt: 1729000000000
+    }
+  ],
   apk: { repo: '', title: 'AnshuCore Android App', desc: 'Manage your requests and projects from your phone. The app is distributed directly from GitHub, so no app store is needed.',
     uses: ['Manage requests and projects on the go', 'Quick access to your dashboard', 'Direct updates through GitHub releases'], req: 'Android 7.0 or later' },
   pages: {
