@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" width="100%" height="100%">
+  <defs>
+    <linearGradient id="leftLegGrad" x1="220" y1="540" x2="420" y2="200" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#581C87" />
+      <stop offset="30%" stop-color="#7C3AED" />
+      <stop offset="70%" stop-color="#3B82F6" />
+      <stop offset="100%" stop-color="#2563EB" />
+    </linearGradient>
+
+    <linearGradient id="rightLegGrad" x1="380" y1="200" x2="560" y2="540" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1D4ED8" />
+      <stop offset="40%" stop-color="#2563EB" />
+      <stop offset="80%" stop-color="#0080FF" />
+      <stop offset="100%" stop-color="#8FE3EC" />
+    </linearGradient>
+
+    <linearGradient id="centerGlowGrad" x1="340" y1="340" x2="460" y2="440" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#8FE3EC" />
+      <stop offset="100%" stop-color="#93C5FD" />
+    </linearGradient>
+  </defs>
+
+  <rect width="800" height="800" rx="180" fill="#FFFFFF" />
+
+  <g id="logo-mark">
+    <path d="M 270 515 L 400 245" stroke="url(#leftLegGrad)" stroke-width="116" stroke-linecap="round" />
+    <path d="M 400 245 L 530 515" stroke="url(#rightLegGrad)" stroke-width="116" stroke-linecap="round" />
+    <path d="M 335 435 Q 400 325 465 435 Q 400 395 335 435 Z" fill="url(#centerGlowGrad)" opacity="0.85" />
+    <path d="M 585 215 Q 585 250 620 250 Q 585 250 585 285 Q 585 250 550 250 Q 585 250 585 215 Z" fill="#8FE3EC" />
+  </g>
+</svg>

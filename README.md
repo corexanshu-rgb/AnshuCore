@@ -1,45 +1,49 @@
-# AnshuCore website
+# AnshuCore — Software Development, Web & Android Apps
 
-Static website (HTML, CSS, JavaScript modules) plus Vercel serverless functions in `/api`.
-No build step and no npm packages are needed.
+Official platform codebase for [AnshuCore](https://anshucore.in). Built with Next.js 15, React 19, and Tailwind CSS.
 
-## Folder structure
+## 🚀 Features
 
+- **Responsive Modern UI**: Built with Tailwind CSS and Framer Motion for smooth animations and micro-interactions.
+- **Android APK Catalog**: Dynamic multi-app showcase featuring live GitHub Release statistics, asset downloads, and version tracking.
+- **Service & Location Hubs**: Dedicated landing pages tailored for tech services across Uttar Pradesh (Mainpuri, Lucknow, Noida, etc.).
+- **Comprehensive Admin Suite**:
+  - APK Manager & Super APK placement
+  - Service & Project portfolio manager
+  - Interactive Enquiry & Client intake
+  - Review moderation & Testimonials
+  - Web Analytics & real-time traffic tracking
+- **Serverless & Scalable**: Designed for zero-config deployment on Vercel with optional Upstash Redis cloud persistence.
+
+## 🛠️ Tech Stack
+
+- **Framework**: Next.js 15 (Pages Router)
+- **Frontend**: React 19, Tailwind CSS, Lucide Icons, Canvas Confetti
+- **Storage / Database**: Upstash Redis (Cloud Serverless) & Local JSON fallback
+- **Hosting & CI/CD**: Vercel
+
+## 📦 Getting Started
+
+### 1. Install Dependencies
+```bash
+npm install
 ```
-anshucore/
-  api/            Serverless functions (site, request, rating, apk, admin)
-  public/         Website files (index.html, admin.html, css/, js/)
-  vercel.json     Routing
-  package.json
-  .env.example    Environment variables to set on Vercel
+
+### 2. Configure Environment
+Copy `.env.example` to `.env.local` and configure:
+```bash
+cp .env.example .env.local
 ```
 
-## Deploy on Vercel (free)
-
-1. Upload this folder to a new GitHub repository.
-2. On vercel.com choose **Add New > Project**, import the repository, keep **Framework Preset: Other**, and deploy.
-3. In the Vercel project open **Storage** (or Marketplace) and add **Upstash Redis** (free plan). Connect it to the project. The database variables are added automatically.
-4. Open **Settings > Environment Variables** and add:
-   - `ADMIN_EMAIL` = your admin email
-   - `ADMIN_PASSWORD` = your admin password
-   - `SESSION_SECRET` = any long random text
-   - `GITHUB_TOKEN` (optional) = a GitHub token with no scopes, for a higher API limit
-5. Redeploy the project (Deployments > Redeploy).
-6. Open `https://your-site.vercel.app/admin` and sign in.
-
-## Using the admin panel
-
-- **Requests**: call, WhatsApp or email each request. "Not interested" deletes it.
-- **Ratings**: visitor ratings stay hidden until you approve them.
-- **Android Apps (APK Manager)**: manage a multi-application catalog. Add apps with custom icons, categories, factual descriptions, and GitHub repositories (`owner/repo`). The platform reads releases, versions, file sizes, and genuine GitHub asset download counts automatically. Configure related apps and designate one featured "Super APK".
-- **Social links**: paste a link and the icon is created automatically.
-- **About and Privacy**: edit the footer pages.
-- **Settings**: profile, photo, contact, home headline, budget presets and visible sections.
-
-## Local test
-
+### 3. Run Locally
+```bash
+npm run dev
 ```
-npm i -g vercel
-vercel dev
+Open [http://localhost:3000](http://localhost:3000) to view the site.
+
+### 4. Build for Production
+```bash
+npm run build
+npm start
 ```
-Without a database, data is kept in memory only while `vercel dev` runs.
+

@@ -1,0 +1,12 @@
+{
+  "name": "AnshuCore",
+  "short_name": "AnshuCore",
+  "description": "AnshuCore — Professional Software Development, Web & Android Apps",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FFFFFF",
+  "theme_color": "#2563EB",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}
