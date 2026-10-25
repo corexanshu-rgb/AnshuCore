@@ -156,6 +156,16 @@ export interface ApkItem {
   published: boolean;
   description: string;
   updatedAt: string;
+  tagline?: string;
+  rating?: number;
+  reviewCount?: number;
+  minAndroid?: string;
+  ageRating?: string;
+  features?: string[];
+  screenshots?: string[];
+  relatedAppIds?: string[];
+  developer?: string;
+  changelog?: Array<{ version: string; date: string; notes: string }>;
 }
 
 export interface LibraryTenant {
@@ -615,7 +625,7 @@ const DEFAULT_STORE_DATA: AdminStoreData = {
       email: 'corexanshu@gmail.com'
     }
   },
-  categories: ['Education', 'Utility', 'Games', 'Security'],
+  categories: ['Education', 'Productivity', 'Developer Tools', 'Utilities', 'Entertainment', 'Tools', 'Other'],
   settings: {
     siteName: 'AnshuCore Admin Console',
     adminEmail: 'corexanshu@gmail.com',
@@ -1106,11 +1116,28 @@ export async function getPublicWebsiteData() {
     // Keep cached counts
   }
 
-  const publishedApks = store.apks.filter(a => a.published !== false);
-  const superApk = publishedApks.find(a => a.isSuperApk) || publishedApks[0] || null;
   const approvedReviews = store.reviews.filter(r => r.status === 'Approved');
+  const publishedApks = store.apks.filter(a => a.published !== false).map(app => {
+    const appReviews = approvedReviews.filter(r => r.appSlug === app.slug);
+    let rating = app.rating;
+    let reviewCount = app.reviewCount || 0;
+    if (appReviews.length > 0) {
+      const sum = appReviews.reduce((acc, r) => acc + (Number(r.rating) || 5), 0);
+      rating = Number((sum / appReviews.length).toFixed(1));
+      reviewCount = appReviews.length;
+    }
+    return {
+      ...app,
+      rating,
+      reviewCount
+    };
+  });
+  const superApk = publishedApks.find(a => a.isSuperApk) || publishedApks[0] || null;
   const publishedServices = (store.websiteContent.services || []).filter((s: any) => s.published !== false);
   const publishedProjects = (store.websiteContent.projects || []).filter((p: any) => p.published !== false);
+  const categories = (store.categories && store.categories.length > 0)
+    ? store.categories
+    : ['Education', 'Productivity', 'Developer Tools', 'Utilities', 'Entertainment', 'Tools', 'Other'];
 
   return {
     hero: store.websiteContent.hero,
@@ -1119,6 +1146,7 @@ export async function getPublicWebsiteData() {
     projects: publishedProjects,
     apks: publishedApks,
     superApk,
+    categories,
     reviews: approvedReviews,
     seo: store.websiteContent.seo,
     social: store.websiteContent.social,

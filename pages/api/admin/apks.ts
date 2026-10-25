@@ -17,7 +17,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   if (req.method === 'POST') {
-    const { id, name, slug, icon, category, repo, releaseTag, directUrl, downloadCount, sizeFormatted, isSuperApk, published, description } = req.body || {};
+    const {
+      id, name, slug, icon, category, repo, releaseTag, directUrl,
+      downloadCount, sizeFormatted, isSuperApk, published, description,
+      tagline, rating, reviewCount, minAndroid, ageRating, features,
+      screenshots, relatedAppIds, developer, changelog
+    } = req.body || {};
 
     if (!name || !slug) {
       return res.status(400).json({
@@ -87,6 +92,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         isSuperApk: Boolean(isSuperApk),
         published: Boolean(published),
         description: description !== undefined ? String(description).trim() : store.apks[index].description,
+        tagline: tagline !== undefined ? String(tagline).trim() : store.apks[index].tagline,
+        rating: rating !== undefined && rating !== null && rating !== '' ? Number(rating) : store.apks[index].rating,
+        reviewCount: reviewCount !== undefined && reviewCount !== null && reviewCount !== '' ? Number(reviewCount) : store.apks[index].reviewCount,
+        minAndroid: minAndroid !== undefined ? String(minAndroid).trim() : store.apks[index].minAndroid,
+        ageRating: ageRating !== undefined ? String(ageRating).trim() : store.apks[index].ageRating,
+        features: features !== undefined ? (Array.isArray(features) ? features.map(String).map(s => s.trim()).filter(Boolean) : String(features).split(/[\n,]+/).map(s => s.trim()).filter(Boolean)) : store.apks[index].features,
+        screenshots: screenshots !== undefined ? (Array.isArray(screenshots) ? screenshots.map(String).map(s => s.trim()).filter(Boolean) : String(screenshots).split(/[\n,]+/).map(s => s.trim()).filter(Boolean)) : store.apks[index].screenshots,
+        relatedAppIds: relatedAppIds !== undefined ? (Array.isArray(relatedAppIds) ? relatedAppIds : String(relatedAppIds).split(/[\n,]+/).map(s => s.trim()).filter(Boolean)) : store.apks[index].relatedAppIds,
+        developer: developer !== undefined ? String(developer).trim() : store.apks[index].developer,
+        changelog: Array.isArray(changelog) ? changelog : store.apks[index].changelog,
         updatedAt: new Date().toISOString().substring(0, 10)
       };
 
@@ -126,6 +141,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         isSuperApk: Boolean(isSuperApk),
         published: published !== undefined ? Boolean(published) : true,
         description: description ? String(description).trim() : '',
+        tagline: tagline ? String(tagline).trim() : '',
+        rating: rating !== undefined && rating !== null && rating !== '' ? Number(rating) : undefined,
+        reviewCount: reviewCount !== undefined && reviewCount !== null && reviewCount !== '' ? Number(reviewCount) : undefined,
+        minAndroid: minAndroid ? String(minAndroid).trim() : '7.0 and up',
+        ageRating: ageRating ? String(ageRating).trim() : 'Rated for 3+',
+        features: features !== undefined ? (Array.isArray(features) ? features.map(String).map(s => s.trim()).filter(Boolean) : String(features).split(/[\n,]+/).map(s => s.trim()).filter(Boolean)) : [],
+        screenshots: screenshots !== undefined ? (Array.isArray(screenshots) ? screenshots.map(String).map(s => s.trim()).filter(Boolean) : String(screenshots).split(/[\n,]+/).map(s => s.trim()).filter(Boolean)) : [],
+        relatedAppIds: relatedAppIds !== undefined ? (Array.isArray(relatedAppIds) ? relatedAppIds : String(relatedAppIds).split(/[\n,]+/).map(s => s.trim()).filter(Boolean)) : [],
+        developer: developer ? String(developer).trim() : 'AnshuCore',
+        changelog: Array.isArray(changelog) ? changelog : [],
         updatedAt: new Date().toISOString().substring(0, 10)
       };
 

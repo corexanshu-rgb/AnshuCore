@@ -71,7 +71,7 @@ export default function Navbar() {
           </Link>
 
           {/* Desktop Nav Links */}
-          <nav className="hidden md:flex items-center gap-8">
+          <nav className="hidden lg:flex items-center gap-6 xl:gap-8">
             {navLinks.map((item) => {
               const isActive = router.pathname === item.href;
               return (
@@ -91,7 +91,7 @@ export default function Navbar() {
           </nav>
 
           {/* Desktop Right Action */}
-          <div className="hidden md:flex items-center gap-4">
+          <div className="hidden lg:flex items-center gap-4">
             <Link href="/contact" className="ac-btn-primary text-sm py-2 px-5">
               Get a Quote
             </Link>
@@ -102,7 +102,7 @@ export default function Navbar() {
             type="button"
             onClick={() => setMobileOpen(true)}
             aria-label="Open menu"
-            className="md:hidden w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 text-[#0f172a] flex items-center justify-center transition-colors"
+            className="lg:hidden w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 text-[#0f172a] flex items-center justify-center transition-colors"
           >
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="3" y1="12" x2="21" y2="12" />

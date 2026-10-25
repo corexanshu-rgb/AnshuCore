@@ -168,8 +168,23 @@ export default function AdminPage({ initialAuthenticated = false, initialUser = 
     sizeFormatted: '24.8 MB',
     isSuperApk: false,
     published: true,
-    description: ''
+    description: '',
+    tagline: '',
+    minAndroid: '7.0 and up',
+    ageRating: 'Rated for 3+',
+    features: '',
+    screenshots: '',
+    relatedAppIds: [] as string[],
+    developer: 'AnshuCore'
   });
+
+  // App manager filter and sort states matching Reference UI
+  const [appStatusFilter, setAppStatusFilter] = useState<'all' | 'published' | 'draft'>('all');
+  const [appSearchQuery, setAppSearchQuery] = useState('');
+  const [appCategoryFilter, setAppCategoryFilter] = useState('all');
+  const [appSortBy, setAppSortBy] = useState<'name' | 'downloads' | 'newest'>('newest');
+  const [editingCategory, setEditingCategory] = useState<{ oldName: string; newName: string } | null>(null);
+  const [reassignCategoryModal, setReassignCategoryModal] = useState<{ targetCat: string; reassignTo: string; affectedApps: any[] } | null>(null);
 
   const [libraryForm, setLibraryForm] = useState({
     id: '',
@@ -662,13 +677,18 @@ export default function AdminPage({ initialAuthenticated = false, initialUser = 
 
   const promptDeleteCategory = (catName: string) => {
     const appsInCat = apksList.filter((a: any) => a.category?.toLowerCase() === catName.toLowerCase());
+    if (appsInCat.length > 0) {
+      setReassignCategoryModal({
+        targetCat: catName,
+        reassignTo: categoriesList.find(c => c.toLowerCase() !== catName.toLowerCase()) || 'Other',
+        affectedApps: appsInCat
+      });
+      return;
+    }
     setDeleteDialog({
       title: 'Delete Category',
-      message: appsInCat.length > 0
-        ? `Warning: There are ${appsInCat.length} application(s) currently categorized under "${catName}". You must reassign them to another category before deleting.`
-        : `Are you sure you want to delete category "${catName}"?`,
+      message: `Are you sure you want to delete category "${catName}"? This category currently has 0 assigned applications.`,
       recordName: `Category: ${catName}`,
-      details: appsInCat.length > 0 ? `Assigned apps: ${appsInCat.map((a: any) => a.name).join(', ')}` : undefined,
       actionType: 'category',
       onConfirm: async () => {
         try {
@@ -719,6 +739,82 @@ export default function AdminPage({ initialAuthenticated = false, initialUser = 
       showToast(`Category "${clean}" created successfully.`);
     } catch (err: any) {
       showToast(err.message || 'Error communicating with server.', 'error');
+    }
+  };
+
+  const handleRenameCategory = async (oldName: string, newName: string) => {
+    const cleanNew = newName.trim();
+    if (!cleanNew || cleanNew.toLowerCase() === oldName.toLowerCase()) {
+      setEditingCategory(null);
+      return;
+    }
+    if (categoriesList.some(c => c.toLowerCase() === cleanNew.toLowerCase() && c.toLowerCase() !== oldName.toLowerCase())) {
+      showToast(`Category "${cleanNew}" already exists.`, 'error');
+      return;
+    }
+    try {
+      const res = await fetch('/api/admin/content', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ section: 'categories', action: 'rename', oldName, newName: cleanNew })
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        showToast(json.error || 'Failed to rename category.', 'error');
+        return;
+      }
+      setCategoriesList(json.categories);
+      setEditingCategory(null);
+      loadApks();
+      showToast(json.message || `Category renamed to "${cleanNew}".`);
+    } catch (err: any) {
+      showToast(err.message || 'Error communicating with server.', 'error');
+    }
+  };
+
+  const handleReorderCategory = async (index: number, direction: 'up' | 'down') => {
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= categoriesList.length) return;
+    const reordered = [...categoriesList];
+    const [moved] = reordered.splice(index, 1);
+    reordered.splice(targetIndex, 0, moved);
+    setCategoriesList(reordered);
+    try {
+      const res = await fetch('/api/admin/content', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ section: 'categories', data: reordered })
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        showToast(json.error || 'Failed to save reordered categories.', 'error');
+        loadApks();
+      } else {
+        showToast('Categories reordered.');
+      }
+    } catch {
+      loadApks();
+    }
+  };
+
+  const handleReassignAndDeleteCategory = async (targetCat: string, reassignTo: string) => {
+    try {
+      setDeletingId(targetCat);
+      const res = await fetch(`/api/admin/content?section=categories&name=${encodeURIComponent(targetCat)}&reassignTo=${encodeURIComponent(reassignTo)}`, { method: 'DELETE' });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        showToast(json.error || 'Failed to reassign and delete category.', 'error');
+        return;
+      }
+      if (json.categories) setCategoriesList(json.categories);
+      setReassignCategoryModal(null);
+      loadApks();
+      loadWebsiteContent();
+      showToast(`Category "${targetCat}" deleted and apps reassigned to "${reassignTo}".`);
+    } catch (e: any) {
+      showToast(e.message || 'Network error.', 'error');
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -1481,6 +1577,124 @@ export default function AdminPage({ initialAuthenticated = false, initialUser = 
                 ) : (
                   <span>Confirm Delete</span>
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Category Reassignment & Safe Deletion Modal */}
+      {reassignCategoryModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.6)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 100000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1rem'
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !deletingId) {
+              setReassignCategoryModal(null);
+            }
+          }}
+        >
+          <div
+            style={{
+              background: '#ffffff',
+              borderRadius: '16px',
+              maxWidth: '520px',
+              width: '100%',
+              padding: '1.75rem',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+              border: '1px solid #fed7aa',
+              position: 'relative'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem', marginBottom: '1.25rem' }}>
+              <div
+                style={{
+                  width: '44px',
+                  height: '44px',
+                  borderRadius: '12px',
+                  background: '#ffedd5',
+                  color: '#ea580c',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}
+              >
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                  <line x1="12" y1="9" x2="12" y2="13" />
+                  <line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <h3 style={{ fontSize: '1.125rem', fontWeight: 800, color: '#0f172a', margin: '0 0 0.35rem 0' }}>
+                  Reassign &amp; Delete Category
+                </h3>
+                <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0, lineHeight: 1.5 }}>
+                  Category <strong>&quot;{reassignCategoryModal.targetCat}&quot;</strong> has <strong>{reassignCategoryModal.affectedApps.length}</strong> active application{reassignCategoryModal.affectedApps.length > 1 ? 's' : ''}. Select a destination category before deleting:
+                </p>
+              </div>
+            </div>
+
+            <div style={{ background: '#f8fafc', padding: '0.875rem', borderRadius: '10px', marginBottom: '1.25rem', border: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: '0.5rem' }}>
+                Affected Applications:
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                {reassignCategoryModal.affectedApps.map((a: any) => (
+                  <span key={a.id} style={{ background: '#eff6ff', color: '#1d4ed8', fontSize: '0.75rem', fontWeight: 600, padding: '3px 8px', borderRadius: '6px' }}>
+                    {a.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '1.5rem' }}>
+              <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 700, color: '#334155', marginBottom: '0.5rem' }}>
+                Reassign Applications To:
+              </label>
+              <select
+                value={reassignCategoryModal.reassignTo}
+                onChange={(e) => setReassignCategoryModal({ ...reassignCategoryModal, reassignTo: e.target.value })}
+                style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.875rem', background: '#fff' }}
+              >
+                {categoriesList
+                  .filter(c => c.toLowerCase() !== reassignCategoryModal.targetCat.toLowerCase())
+                  .map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))
+                }
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <button
+                type="button"
+                onClick={() => setReassignCategoryModal(null)}
+                disabled={Boolean(deletingId)}
+                className="admin-btn admin-btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleReassignAndDeleteCategory(reassignCategoryModal.targetCat, reassignCategoryModal.reassignTo)}
+                disabled={Boolean(deletingId)}
+                className="admin-btn admin-btn-danger"
+              >
+                {deletingId ? 'Reassigning & Deleting...' : 'Reassign & Delete'}
               </button>
             </div>
           </div>
@@ -2320,7 +2534,7 @@ export default function AdminPage({ initialAuthenticated = false, initialUser = 
                       name: '',
                       slug: '',
                       icon: '',
-                      category: 'Education',
+                      category: categoriesList[0] || 'Education',
                       repo: 'indbite-web/',
                       releaseTag: 'v1.0.0',
                       directUrl: '',
@@ -2328,7 +2542,14 @@ export default function AdminPage({ initialAuthenticated = false, initialUser = 
                       sizeFormatted: '20.0 MB',
                       isSuperApk: false,
                       published: true,
-                      description: ''
+                      description: '',
+                      tagline: '',
+                      minAndroid: '7.0 and up',
+                      ageRating: 'Rated for 3+',
+                      features: '',
+                      screenshots: '',
+                      relatedAppIds: [],
+                      developer: 'AnshuCore'
                     });
                     setActiveModal('apk-modal');
                   }}
@@ -2553,12 +2774,14 @@ export default function AdminPage({ initialAuthenticated = false, initialUser = 
           {/* VIEW 2: APK MANAGER (Multi-APK Management)                */}
           {/* ========================================================= */}
           {/* VIEW 2: APK MANAGER & CATEGORIES */}
+          {/* VIEW 2: APK MANAGER, CATEGORIES & SUPER APK */}
           {activeNav === 'apk-categories' ? (
             <div className="admin-card" style={{ padding: '1.5rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
                 <div>
-                  <h2 style={{ fontSize: '1.125rem', fontWeight: 700, color: '#0f172a', margin: '0 0 0.25rem 0' }}>APK Store Categories</h2>
-                  <p style={{ fontSize: '0.8125rem', color: '#64748b', margin: 0 }}>Manage application classifications. Deletion is protected if applications are assigned to a category.</p>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', marginBottom: '0.25rem' }}>Apps &gt; Categories</div>
+                  <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#0f172a', margin: '0 0 0.25rem 0' }}>Manage Categories</h2>
+                  <p style={{ fontSize: '0.8125rem', color: '#64748b', margin: 0 }}>Create, rename, reorder, and safely delete categories. Deletion requires reassigning active applications.</p>
                 </div>
                 <form onSubmit={handleCreateCategory} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                   <input
@@ -2566,7 +2789,7 @@ export default function AdminPage({ initialAuthenticated = false, initialUser = 
                     placeholder="New category name..."
                     value={newCategoryInput}
                     onChange={e => setNewCategoryInput(e.target.value)}
-                    style={{ padding: '0.5rem 0.85rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.875rem', minWidth: '200px' }}
+                    style={{ padding: '0.55rem 0.85rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.875rem', minWidth: '220px' }}
                   />
                   <button type="submit" className="admin-btn admin-btn-primary">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
@@ -2579,6 +2802,7 @@ export default function AdminPage({ initialAuthenticated = false, initialUser = 
                 <table className="admin-table">
                   <thead>
                     <tr>
+                      <th style={{ width: '80px' }}>Order</th>
                       <th>Category Name</th>
                       <th>Assigned Applications</th>
                       <th>Status</th>
@@ -2586,14 +2810,64 @@ export default function AdminPage({ initialAuthenticated = false, initialUser = 
                     </tr>
                   </thead>
                   <tbody>
-                    {categoriesList.map(cat => {
+                    {categoriesList.map((cat, idx) => {
                       const appsInCat = apksList.filter((a: any) => a.category?.toLowerCase() === cat.toLowerCase());
+                      const isEditing = editingCategory?.oldName === cat;
                       return (
                         <tr key={cat}>
+                          <td>
+                            <div style={{ display: 'flex', gap: '4px' }}>
+                              <button
+                                type="button"
+                                disabled={idx === 0}
+                                onClick={() => handleReorderCategory(idx, 'up')}
+                                className="admin-btn admin-btn-secondary"
+                                style={{ padding: '2px 6px', fontSize: '10px', opacity: idx === 0 ? 0.3 : 1 }}
+                                title="Move up"
+                              >
+                                ▲
+                              </button>
+                              <button
+                                type="button"
+                                disabled={idx === categoriesList.length - 1}
+                                onClick={() => handleReorderCategory(idx, 'down')}
+                                className="admin-btn admin-btn-secondary"
+                                style={{ padding: '2px 6px', fontSize: '10px', opacity: idx === categoriesList.length - 1 ? 0.3 : 1 }}
+                                title="Move down"
+                              >
+                                ▼
+                              </button>
+                            </div>
+                          </td>
                           <td style={{ fontWeight: 700, color: '#0f172a' }}>
-                            <span style={{ background: '#f1f5f9', padding: '4px 10px', borderRadius: '6px', fontSize: '0.875rem' }}>
-                              {cat}
-                            </span>
+                            {isEditing ? (
+                              <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                <input
+                                  type="text"
+                                  value={editingCategory.newName}
+                                  onChange={e => setEditingCategory({ ...editingCategory, newName: e.target.value })}
+                                  style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #2563eb', fontSize: '0.875rem' }}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleRenameCategory(cat, editingCategory.newName)}
+                                  className="admin-btn admin-btn-primary admin-btn-sm"
+                                >
+                                  Save
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingCategory(null)}
+                                  className="admin-btn admin-btn-secondary admin-btn-sm"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            ) : (
+                              <span style={{ background: '#f1f5f9', padding: '4px 10px', borderRadius: '6px', fontSize: '0.875rem' }}>
+                                {cat}
+                              </span>
+                            )}
                           </td>
                           <td>
                             {appsInCat.length > 0 ? (
@@ -2615,13 +2889,23 @@ export default function AdminPage({ initialAuthenticated = false, initialUser = 
                             <span className="admin-badge admin-badge-active">Active</span>
                           </td>
                           <td style={{ textAlign: 'right' }}>
-                            <button
-                              onClick={() => promptDeleteCategory(cat)}
-                              disabled={deletingId === cat}
-                              className="admin-btn admin-btn-danger admin-btn-sm"
-                            >
-                              {deletingId === cat ? 'Deleting...' : 'Delete'}
-                            </button>
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                              {!isEditing && (
+                                <button
+                                  onClick={() => setEditingCategory({ oldName: cat, newName: cat })}
+                                  className="admin-btn admin-btn-secondary admin-btn-sm"
+                                >
+                                  Rename
+                                </button>
+                              )}
+                              <button
+                                onClick={() => promptDeleteCategory(cat)}
+                                disabled={deletingId === cat}
+                                className="admin-btn admin-btn-danger admin-btn-sm"
+                              >
+                                {deletingId === cat ? 'Deleting...' : 'Delete'}
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -2630,12 +2914,89 @@ export default function AdminPage({ initialAuthenticated = false, initialUser = 
                 </table>
               </div>
             </div>
-          ) : activeNav.startsWith('apk-') ? (
+          ) : activeNav === 'apk-super' ? (
             <div className="admin-card" style={{ padding: '1.5rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+              <div style={{ marginBottom: '1.5rem' }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', marginBottom: '0.25rem' }}>Apps &gt; Featured App</div>
+                <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#0f172a', margin: '0 0 0.25rem 0' }}>Featured Application Banner</h2>
+                <p style={{ fontSize: '0.8125rem', color: '#64748b', margin: 0 }}>Select the primary application showcased in the prominent hero banner on the Apps Store homepage.</p>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1rem' }}>
+                {apksList.filter(a => a.published !== false).map(apk => {
+                  const isCurrentSuper = Boolean(apk.isSuperApk);
+                  return (
+                    <div
+                      key={apk.id}
+                      style={{
+                        padding: '1.25rem',
+                        borderRadius: '16px',
+                        border: isCurrentSuper ? '2px solid #2563eb' : '1px solid #e2e8f0',
+                        background: isCurrentSuper ? '#eff6ff' : '#ffffff',
+                        boxShadow: '0 2px 8px rgba(15,23,42,0.04)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        gap: '1rem'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                        <AppIcon icon={apk.icon} name={apk.name} size={48} className="rounded-xl shadow-xs" />
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <h4 style={{ fontSize: '0.9375rem', fontWeight: 800, color: '#0f172a', margin: 0 }} className="truncate">{apk.name}</h4>
+                          <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{apk.category} &bull; {apk.releaseTag || 'v1.0.0'}</span>
+                        </div>
+                        {isCurrentSuper && (
+                          <span style={{ background: '#2563eb', color: '#fff', padding: '3px 8px', borderRadius: '6px', fontSize: '0.6875rem', fontWeight: 700 }}>
+                            ACTIVE
+                          </span>
+                        )}
+                      </div>
+
+                      <p style={{ fontSize: '0.8125rem', color: '#475569', margin: 0, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                        {apk.tagline || apk.description || 'Official application.'}
+                      </p>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '0.5rem', borderTop: '1px solid #e2e8f0' }}>
+                        <a href={`/apps/${apk.slug}`} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.75rem', color: '#2563eb', fontWeight: 600 }}>
+                          Preview Store Page &rarr;
+                        </a>
+                        <button
+                          type="button"
+                          disabled={isCurrentSuper}
+                          onClick={async () => {
+                            try {
+                              const res = await fetch('/api/admin/apks', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ ...apk, isSuperApk: true })
+                              });
+                              if (res.ok) {
+                                showToast(`"${apk.name}" set as featured application.`);
+                                loadApks();
+                              }
+                            } catch {
+                              showToast('Failed to set featured app.', 'error');
+                            }
+                          }}
+                          className={`admin-btn admin-btn-sm ${isCurrentSuper ? 'admin-btn-secondary' : 'admin-btn-primary'}`}
+                        >
+                          {isCurrentSuper ? 'Currently Featured' : 'Set as Featured'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : activeNav.startsWith('apk-') || activeNav === 'apks' ? (
+            /* VIEW: MANAGE APPS (Matching Reference Image 4) */
+            <div className="admin-card" style={{ padding: '1.5rem' }}>
+              {/* Header with Breadcrumb, Title & Add New App Button */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
                 <div>
-                  <h2 style={{ fontSize: '1.125rem', fontWeight: 700, color: '#0f172a', margin: '0 0 0.25rem 0' }}>APK Catalog & Distribution</h2>
-                  <p style={{ fontSize: '0.8125rem', color: '#64748b', margin: 0 }}>Multi-application manager powered by GitHub Releases distribution.</p>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', marginBottom: '0.25rem' }}>Apps &gt; Manage Apps</div>
+                  <h2 style={{ fontSize: '1.35rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>Manage Apps</h2>
                 </div>
                 <button
                   onClick={() => {
@@ -2644,108 +3005,270 @@ export default function AdminPage({ initialAuthenticated = false, initialUser = 
                       name: '',
                       slug: '',
                       icon: '',
-                      category: 'Education',
+                      category: categoriesList[0] || 'Education',
                       repo: 'indbite-web/',
-                      releaseTag: 'v1.0.0',
+                      releaseTag: '1.0.0',
                       directUrl: '',
                       downloadCount: 0,
                       sizeFormatted: '20.0 MB',
                       isSuperApk: false,
                       published: true,
-                      description: ''
+                      description: '',
+                      tagline: '',
+                      minAndroid: '7.0 and up',
+                      ageRating: 'Rated for 3+',
+                      features: '',
+                      screenshots: '',
+                      relatedAppIds: [],
+                      developer: 'AnshuCore'
                     });
                     setActiveModal('apk-modal');
                   }}
                   className="admin-btn admin-btn-primary"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.6rem 1.15rem' }}
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-                  <span>Add Application</span>
+                  <span>+ Add New App</span>
                 </button>
               </div>
 
+              {/* Status Filter Tabs matching Reference Image 4 */}
+              <div style={{ display: 'flex', gap: '1rem', borderBottom: '1px solid #eaeff8', marginBottom: '1.25rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setAppStatusFilter('all')}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    padding: '0.6rem 0.25rem',
+                    fontSize: '0.875rem',
+                    fontWeight: appStatusFilter === 'all' ? 700 : 500,
+                    color: appStatusFilter === 'all' ? '#2563eb' : '#64748b',
+                    borderBottom: appStatusFilter === 'all' ? '2px solid #2563eb' : '2px solid transparent',
+                    cursor: 'pointer'
+                  }}
+                >
+                  All ({apksList.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAppStatusFilter('published')}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    padding: '0.6rem 0.25rem',
+                    fontSize: '0.875rem',
+                    fontWeight: appStatusFilter === 'published' ? 700 : 500,
+                    color: appStatusFilter === 'published' ? '#2563eb' : '#64748b',
+                    borderBottom: appStatusFilter === 'published' ? '2px solid #2563eb' : '2px solid transparent',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Published ({apksList.filter(a => a.published !== false).length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAppStatusFilter('draft')}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    padding: '0.6rem 0.25rem',
+                    fontSize: '0.875rem',
+                    fontWeight: appStatusFilter === 'draft' ? 700 : 500,
+                    color: appStatusFilter === 'draft' ? '#2563eb' : '#64748b',
+                    borderBottom: appStatusFilter === 'draft' ? '2px solid #2563eb' : '2px solid transparent',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Draft ({apksList.filter(a => a.published === false).length})
+                </button>
+              </div>
+
+              {/* Search, Category Filter, and Sort Controls Row matching Reference Image 4 */}
+              <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.25rem', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ position: 'relative', flex: '1', minWidth: '220px', maxWidth: '380px' }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                  <input
+                    type="search"
+                    placeholder="Search apps..."
+                    value={appSearchQuery}
+                    onChange={e => setAppSearchQuery(e.target.value)}
+                    style={{ width: '100%', padding: '0.5rem 0.75rem 0.5rem 2.2rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.8125rem' }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                  <select
+                    value={appCategoryFilter}
+                    onChange={e => setAppCategoryFilter(e.target.value)}
+                    style={{ padding: '0.5rem 0.75rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.8125rem', background: '#fff', color: '#334155' }}
+                  >
+                    <option value="all">All Categories</option>
+                    {categoriesList.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={appSortBy}
+                    onChange={e => setAppSortBy(e.target.value as any)}
+                    style={{ padding: '0.5rem 0.75rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.8125rem', background: '#fff', color: '#334155' }}
+                  >
+                    <option value="newest">Sort: Newest</option>
+                    <option value="name">Sort: Name (A-Z)</option>
+                    <option value="downloads">Sort: Downloads</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Table of Apps matching Reference Image 4 */}
               <div className="admin-table-container">
                 <table className="admin-table">
                   <thead>
                     <tr>
-                      <th>App</th>
+                      <th style={{ width: '60px' }}>Icon</th>
+                      <th>Name</th>
                       <th>Category</th>
-                      <th>GitHub Repo / Source</th>
                       <th>Version</th>
-                      <th>Size</th>
-                      <th>Downloads</th>
-                      <th>Super APK</th>
                       <th>Status</th>
                       <th style={{ textAlign: 'right' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {apksList.map(apk => (
-                      <tr key={apk.id}>
-                        <td>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                            <AppIcon icon={apk.icon} name={apk.name} size={36} className="rounded-xl shadow-xs" />
+                    {(() => {
+                      let list = [...apksList];
+                      // Filter by status tab
+                      if (appStatusFilter === 'published') {
+                        list = list.filter(a => a.published !== false);
+                      } else if (appStatusFilter === 'draft') {
+                        list = list.filter(a => a.published === false);
+                      }
+                      // Filter by category
+                      if (appCategoryFilter !== 'all') {
+                        list = list.filter(a => a.category?.toLowerCase() === appCategoryFilter.toLowerCase());
+                      }
+                      // Filter by search query
+                      if (appSearchQuery.trim()) {
+                        const q = appSearchQuery.toLowerCase().trim();
+                        list = list.filter(a => a.name.toLowerCase().includes(q) || a.slug.toLowerCase().includes(q) || (a.category && a.category.toLowerCase().includes(q)));
+                      }
+                      // Sort
+                      if (appSortBy === 'name') {
+                        list.sort((a, b) => a.name.localeCompare(b.name));
+                      } else if (appSortBy === 'downloads') {
+                        list.sort((a, b) => (Number(b.downloadCount) || 0) - (Number(a.downloadCount) || 0));
+                      } else {
+                        list.sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime());
+                      }
+
+                      if (list.length === 0) {
+                        return (
+                          <tr>
+                            <td colSpan={6} style={{ textAlign: 'center', padding: '2.5rem', color: '#94a3b8', fontSize: '0.875rem' }}>
+                              No applications found matching the selected filters.
+                            </td>
+                          </tr>
+                        );
+                      }
+
+                      return list.map(apk => (
+                        <tr key={apk.id}>
+                          <td>
+                            <AppIcon icon={apk.icon} name={apk.name} size={36} className="rounded-xl shadow-xs border border-slate-100" />
+                          </td>
+                          <td>
                             <div>
-                              <span style={{ fontWeight: 700, color: '#0f172a', display: 'block' }}>{apk.name}</span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ fontWeight: 700, color: '#0f172a' }}>{apk.name}</span>
+                                {apk.isSuperApk && (
+                                  <span style={{ color: '#eab308' }} title="Featured App">
+                                    <StarIcon size={13} color="#eab308" />
+                                  </span>
+                                )}
+                              </div>
                               <span style={{ fontSize: '0.6875rem', color: '#94a3b8' }}>/{apk.slug}</span>
                             </div>
-                          </div>
-                        </td>
-                        <td><span style={{ fontSize: '0.8125rem', color: '#475569', background: '#f1f5f9', padding: '2px 8px', borderRadius: '6px' }}>{apk.category}</span></td>
-                        <td style={{ fontSize: '0.8125rem', color: '#2563eb' }}>{apk.repo || 'Direct Asset'}</td>
-                        <td style={{ fontSize: '0.8125rem', fontWeight: 600 }}>{apk.releaseTag || 'v1.0.0'}</td>
-                        <td style={{ fontSize: '0.8125rem', color: '#64748b' }}>{apk.sizeFormatted}</td>
-                        <td style={{ fontSize: '0.875rem', fontWeight: 700, color: '#0f172a' }}>{apk.downloadCount.toLocaleString()}</td>
-                        <td>
-                          {apk.isSuperApk ? (
-                            <span style={{ color: '#eab308', fontWeight: 700, fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                              <StarIcon size={12} color="#eab308" />
-                              <span>Primary</span>
+                          </td>
+                          <td>
+                            <span style={{ fontSize: '0.8125rem', color: '#475569', background: '#f1f5f9', padding: '3px 10px', borderRadius: '6px', fontWeight: 500 }}>
+                              {apk.category}
                             </span>
-                          ) : (
-                            <span style={{ color: '#cbd5e1', fontSize: '0.75rem' }}>—</span>
-                          )}
-                        </td>
-                        <td>
-                          <span className={`admin-badge ${apk.published ? 'admin-badge-active' : 'admin-badge-archived'}`}>
-                            {apk.published ? 'Published' : 'Draft'}
-                          </span>
-                        </td>
-                        <td style={{ textAlign: 'right' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.5rem' }}>
-                            <button
-                              onClick={() => {
-                                setApkForm({
-                                  id: apk.id,
-                                  name: apk.name,
-                                  slug: apk.slug,
-                                  icon: apk.icon,
-                                  category: apk.category,
-                                  repo: apk.repo,
-                                  releaseTag: apk.releaseTag,
-                                  directUrl: apk.directUrl,
-                                  downloadCount: apk.downloadCount,
-                                  sizeFormatted: apk.sizeFormatted,
-                                  isSuperApk: apk.isSuperApk,
-                                  published: apk.published,
-                                  description: apk.description
-                                });
-                                setActiveModal('apk-modal');
-                              }}
-                              className="admin-btn admin-btn-secondary admin-btn-sm"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => promptDeleteApk(apk)}
-                              disabled={deletingId === apk.id}
-                              className="admin-btn admin-btn-danger admin-btn-sm"
-                            >
-                              {deletingId === apk.id ? 'Deleting...' : 'Delete'}
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td>
+                            <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#0f172a', fontFamily: 'monospace' }}>
+                              {apk.releaseTag || '1.0.0'}
+                            </span>
+                          </td>
+                          <td>
+                            <span className={`admin-badge ${apk.published !== false ? 'admin-badge-active' : 'admin-badge-archived'}`}>
+                              {apk.published !== false ? 'Published' : 'Draft'}
+                            </span>
+                          </td>
+                          <td style={{ textAlign: 'right' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.4rem' }}>
+                              {/* Preview Eye Action */}
+                              <a
+                                href={`/apps/${apk.slug}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="admin-btn admin-btn-secondary admin-btn-sm"
+                                style={{ padding: '6px 8px' }}
+                                title="Preview Details Page"
+                              >
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                              </a>
+
+                              {/* Edit Pencil Action */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setApkForm({
+                                    id: apk.id,
+                                    name: apk.name,
+                                    slug: apk.slug,
+                                    icon: apk.icon,
+                                    category: apk.category || 'Education',
+                                    repo: apk.repo || '',
+                                    releaseTag: apk.releaseTag || 'v1.0.0',
+                                    directUrl: apk.directUrl || '',
+                                    downloadCount: apk.downloadCount || 0,
+                                    sizeFormatted: apk.sizeFormatted || '20.0 MB',
+                                    isSuperApk: Boolean(apk.isSuperApk),
+                                    published: apk.published !== false,
+                                    description: apk.description || '',
+                                    tagline: apk.tagline || '',
+                                    minAndroid: apk.minAndroid || '7.0 and up',
+                                    ageRating: apk.ageRating || 'Rated for 3+',
+                                    features: Array.isArray(apk.features) ? apk.features.join(', ') : (apk.features || ''),
+                                    screenshots: Array.isArray(apk.screenshots) ? apk.screenshots.join(', ') : (apk.screenshots || ''),
+                                    relatedAppIds: Array.isArray(apk.relatedAppIds) ? apk.relatedAppIds : [],
+                                    developer: apk.developer || 'AnshuCore'
+                                  });
+                                  setActiveModal('apk-modal');
+                                }}
+                                className="admin-btn admin-btn-secondary admin-btn-sm"
+                                style={{ padding: '6px 8px' }}
+                                title="Edit App Details"
+                              >
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                              </button>
+
+                              {/* Delete Trash Action */}
+                              <button
+                                type="button"
+                                onClick={() => promptDeleteApk(apk)}
+                                disabled={deletingId === apk.id}
+                                className="admin-btn admin-btn-danger admin-btn-sm"
+                                style={{ padding: '6px 8px' }}
+                                title="Delete App"
+                              >
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ));
+                    })()}
                   </tbody>
                 </table>
               </div>
@@ -5252,11 +5775,36 @@ export default function AdminPage({ initialAuthenticated = false, initialUser = 
       {/* 2. ADD / EDIT APK MODAL */}
       {activeModal === 'apk-modal' && (
         <div className="admin-modal-backdrop" onClick={() => setActiveModal(null)}>
-          <div className="admin-modal-box" onClick={e => e.stopPropagation()}>
-            <div style={{ padding: '1.5rem', borderBottom: '1px solid #eaeff8', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ fontSize: '1.125rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
-                {apkForm.id ? 'Edit Application' : 'Add New Application'}
-              </h3>
+          <div className="admin-modal-box" style={{ maxWidth: '680px', maxHeight: '92vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+            <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid #eaeff8', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, background: '#ffffff', zIndex: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <h3 style={{ fontSize: '1.125rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
+                  {apkForm.id ? 'Edit Application' : 'Add New Application'}
+                </h3>
+                {apkForm.slug && (
+                  <a
+                    href={`/apps/${apkForm.slug}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{
+                      fontSize: '0.75rem',
+                      color: '#2563eb',
+                      background: '#eff6ff',
+                      padding: '3px 8px',
+                      borderRadius: '6px',
+                      fontWeight: 600,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      textDecoration: 'none'
+                    }}
+                    title="Preview Public Store Details Page"
+                  >
+                    <span>Preview Page</span>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                  </a>
+                )}
+              </div>
               <button onClick={() => setActiveModal(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', display: 'flex', alignItems: 'center' }} aria-label="Close dialog"><CloseIcon /></button>
             </div>
             <form
@@ -5293,30 +5841,46 @@ export default function AdminPage({ initialAuthenticated = false, initialUser = 
                   {modalError}
                 </div>
               )}
+
+              {/* Basic Info: Name & Slug */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#334155', marginBottom: '0.35rem' }}>Application Name</label>
+                  <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#334155', marginBottom: '0.35rem' }}>Application Name *</label>
                   <input
                     type="text"
                     required
                     value={apkForm.name}
-                    onChange={e => setApkForm({ ...apkForm, name: e.target.value, slug: apkForm.slug || e.target.value.toLowerCase().replace(/\s+/g, '-') })}
+                    onChange={e => setApkForm({ ...apkForm, name: e.target.value, slug: apkForm.slug || e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') })}
                     placeholder="e.g. Anshu Mock"
                     style={{ width: '100%', padding: '0.65rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.875rem' }}
                   />
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#334155', marginBottom: '0.35rem' }}>URL Slug</label>
+                  <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#334155', marginBottom: '0.35rem' }}>URL Slug *</label>
                   <input
                     type="text"
                     required
                     value={apkForm.slug}
-                    onChange={e => setApkForm({ ...apkForm, slug: e.target.value })}
+                    onChange={e => setApkForm({ ...apkForm, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-_]/g, '-') })}
                     placeholder="anshu-mock"
                     style={{ width: '100%', padding: '0.65rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.875rem' }}
                   />
                 </div>
               </div>
+
+              {/* Tagline */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#334155', marginBottom: '0.35rem' }}>Short Tagline (Hero Banner &amp; Cards)</label>
+                <input
+                  type="text"
+                  value={apkForm.tagline}
+                  onChange={e => setApkForm({ ...apkForm, tagline: e.target.value })}
+                  placeholder="e.g. Best mock test app for all competitive exams."
+                  style={{ width: '100%', padding: '0.65rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.875rem' }}
+                />
+              </div>
+
+              {/* Category & Version */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#334155', marginBottom: '0.35rem' }}>Category</label>
@@ -5325,13 +5889,25 @@ export default function AdminPage({ initialAuthenticated = false, initialUser = 
                     onChange={e => setApkForm({ ...apkForm, category: e.target.value })}
                     style={{ width: '100%', padding: '0.65rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.875rem', background: '#fff' }}
                   >
-                    <option value="Education">Education</option>
-                    <option value="Utility">Utility</option>
-                    <option value="Games">Games</option>
-                    <option value="Security">Security</option>
-                    <option value="Enterprise">Enterprise</option>
+                    {categoriesList.map(c => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
                   </select>
                 </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#334155', marginBottom: '0.35rem' }}>Version / Release Tag</label>
+                  <input
+                    type="text"
+                    value={apkForm.releaseTag}
+                    onChange={e => setApkForm({ ...apkForm, releaseTag: e.target.value })}
+                    placeholder="v1.5.0"
+                    style={{ width: '100%', padding: '0.65rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.875rem' }}
+                  />
+                </div>
+              </div>
+
+              {/* GitHub Repo & Direct APK Download URL */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#334155', marginBottom: '0.35rem' }}>GitHub Repository</label>
                   <input
@@ -5342,16 +5918,16 @@ export default function AdminPage({ initialAuthenticated = false, initialUser = 
                     style={{ width: '100%', padding: '0.65rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.875rem' }}
                   />
                 </div>
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#334155', marginBottom: '0.35rem' }}>Direct APK Download URL</label>
-                <input
-                  type="text"
-                  value={apkForm.directUrl}
-                  onChange={e => setApkForm({ ...apkForm, directUrl: e.target.value })}
-                  placeholder="https://github.com/.../releases/download/.../App.apk"
-                  style={{ width: '100%', padding: '0.65rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.875rem' }}
-                />
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#334155', marginBottom: '0.35rem' }}>Direct APK Asset Download URL</label>
+                  <input
+                    type="text"
+                    value={apkForm.directUrl}
+                    onChange={e => setApkForm({ ...apkForm, directUrl: e.target.value })}
+                    placeholder="https://github.com/.../releases/download/.../App.apk"
+                    style={{ width: '100%', padding: '0.65rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.875rem' }}
+                  />
+                </div>
               </div>
 
               {/* UPLOAD APP ICON CONTROL */}
@@ -5360,10 +5936,9 @@ export default function AdminPage({ initialAuthenticated = false, initialUser = 
                   Application Icon
                 </label>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', flexWrap: 'wrap' }}>
-                  {/* Icon Live Preview Container (Preserves aspect ratio, never stretches) */}
                   <div style={{
-                    width: '72px',
-                    height: '72px',
+                    width: '64px',
+                    height: '64px',
                     borderRadius: '16px',
                     border: '2px solid #cbd5e1',
                     background: '#ffffff',
@@ -5377,12 +5952,11 @@ export default function AdminPage({ initialAuthenticated = false, initialUser = 
                     <AppIcon
                       icon={apkForm.icon}
                       name={apkForm.name || 'App'}
-                      size={72}
+                      size={64}
                       className="rounded-2xl"
                     />
                   </div>
 
-                  {/* Actions & Controls */}
                   <div style={{ flex: 1, minWidth: '220px' }}>
                     <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.4rem', flexWrap: 'wrap' }}>
                       <label
@@ -5415,18 +5989,14 @@ export default function AdminPage({ initialAuthenticated = false, initialUser = 
                         </button>
                       )}
                     </div>
-
                     <p style={{ fontSize: '0.75rem', color: '#64748b', margin: '0 0 0.5rem 0' }}>
-                      Supports PNG, JPEG, or WebP (max 1.5MB). Dimensions auto-validated on upload.
+                      Supports PNG, JPEG, or WebP. Auto-validated on upload.
                     </p>
-
                     {apkIconError && (
                       <div style={{ fontSize: '0.75rem', color: '#b91c1c', fontWeight: 600, marginBottom: '0.5rem' }}>
                         {apkIconError}
                       </div>
                     )}
-
-                    {/* HTTPS URL Fallback Accordion */}
                     <details style={{ fontSize: '0.75rem', color: '#475569' }}>
                       <summary style={{ cursor: 'pointer', userSelect: 'none', color: '#2563eb', fontWeight: 600 }}>
                         Or enter direct HTTPS Image URL
@@ -5448,8 +6018,130 @@ export default function AdminPage({ initialAuthenticated = false, initialUser = 
                   </div>
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center', marginTop: '0.5rem' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', fontWeight: 600, cursor: 'pointer' }}>
+
+              {/* Description */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#334155', marginBottom: '0.35rem' }}>About This App (Detailed Description)</label>
+                <textarea
+                  rows={3}
+                  value={apkForm.description}
+                  onChange={e => setApkForm({ ...apkForm, description: e.target.value })}
+                  placeholder="Comprehensive description of the application's capabilities, target audience, and usage..."
+                  style={{ width: '100%', padding: '0.65rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.875rem', resize: 'vertical' }}
+                />
+              </div>
+
+              {/* Features & Keywords */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#334155', marginBottom: '0.35rem' }}>Features / Keywords (Comma-separated)</label>
+                <input
+                  type="text"
+                  value={apkForm.features}
+                  onChange={e => setApkForm({ ...apkForm, features: e.target.value })}
+                  placeholder="Mock Test, Competitive Exams, Analytics, Offline Support"
+                  style={{ width: '100%', padding: '0.65rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.875rem' }}
+                />
+              </div>
+
+              {/* Min Android, Age Rating, Developer, Size */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '0.75rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#334155', marginBottom: '0.3rem' }}>Min Android OS</label>
+                  <input
+                    type="text"
+                    value={apkForm.minAndroid}
+                    onChange={e => setApkForm({ ...apkForm, minAndroid: e.target.value })}
+                    placeholder="7.0 and up"
+                    style={{ width: '100%', padding: '0.55rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.8125rem' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#334155', marginBottom: '0.3rem' }}>Age Rating</label>
+                  <input
+                    type="text"
+                    value={apkForm.ageRating}
+                    onChange={e => setApkForm({ ...apkForm, ageRating: e.target.value })}
+                    placeholder="Rated for 3+"
+                    style={{ width: '100%', padding: '0.55rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.8125rem' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#334155', marginBottom: '0.3rem' }}>Developer</label>
+                  <input
+                    type="text"
+                    value={apkForm.developer}
+                    onChange={e => setApkForm({ ...apkForm, developer: e.target.value })}
+                    placeholder="AnshuCore"
+                    style={{ width: '100%', padding: '0.55rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.8125rem' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#334155', marginBottom: '0.3rem' }}>App Size</label>
+                  <input
+                    type="text"
+                    value={apkForm.sizeFormatted}
+                    onChange={e => setApkForm({ ...apkForm, sizeFormatted: e.target.value })}
+                    placeholder="25 MB"
+                    style={{ width: '100%', padding: '0.55rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.8125rem' }}
+                  />
+                </div>
+              </div>
+
+              {/* Screenshots */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#334155', marginBottom: '0.35rem' }}>Screenshots (Image URLs, comma or newline separated)</label>
+                <textarea
+                  rows={2}
+                  value={apkForm.screenshots}
+                  onChange={e => setApkForm({ ...apkForm, screenshots: e.target.value })}
+                  placeholder="https://example.com/screenshot1.png, https://example.com/screenshot2.png"
+                  style={{ width: '100%', padding: '0.65rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.8125rem', resize: 'vertical' }}
+                />
+              </div>
+
+              {/* Related Apps Multiselect */}
+              {apksList.filter(a => a.id !== apkForm.id).length > 0 && (
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#334155', marginBottom: '0.4rem' }}>
+                    Select Related Applications:
+                  </label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', maxHeight: '120px', overflowY: 'auto', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '8px', background: '#f8fafc' }}>
+                    {apksList.filter(a => a.id !== apkForm.id).map(app => {
+                      const isSelected = Array.isArray(apkForm.relatedAppIds) && apkForm.relatedAppIds.includes(app.id);
+                      return (
+                        <button
+                          key={app.id}
+                          type="button"
+                          onClick={() => {
+                            const cur = Array.isArray(apkForm.relatedAppIds) ? apkForm.relatedAppIds : [];
+                            const next = isSelected ? cur.filter(x => x !== app.id) : [...cur, app.id];
+                            setApkForm({ ...apkForm, relatedAppIds: next });
+                          }}
+                          style={{
+                            padding: '4px 10px',
+                            borderRadius: '20px',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            border: isSelected ? '1px solid #2563eb' : '1px solid #cbd5e1',
+                            background: isSelected ? '#eff6ff' : '#ffffff',
+                            color: isSelected ? '#1d4ed8' : '#475569',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}
+                        >
+                          <span>{isSelected ? '✓ ' : '+ '}{app.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Status checkboxes */}
+              <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center', marginTop: '0.25rem', padding: '0.75rem', background: '#f8fafc', borderRadius: '8px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', fontWeight: 600, cursor: 'pointer', color: '#0f172a' }}>
                   <input
                     type="checkbox"
                     checked={apkForm.published}
@@ -5457,20 +6149,60 @@ export default function AdminPage({ initialAuthenticated = false, initialUser = 
                   />
                   <span>Published on Store</span>
                 </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', fontWeight: 600, cursor: 'pointer' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', fontWeight: 600, cursor: 'pointer', color: '#0f172a' }}>
                   <input
                     type="checkbox"
                     checked={apkForm.isSuperApk}
                     onChange={e => setApkForm({ ...apkForm, isSuperApk: e.target.checked })}
                   />
-                  <span>Set as Super APK</span>
+                  <span>Set as Featured App (Homepage Hero Banner)</span>
                 </label>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1rem' }}>
-                <button type="button" onClick={() => setActiveModal(null)} className="admin-btn admin-btn-secondary">Cancel</button>
-                <button type="submit" disabled={modalLoading} className="admin-btn admin-btn-primary">
-                  {modalLoading ? 'Saving...' : 'Save Application'}
-                </button>
+
+              {/* Modal Actions */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #eaeff8' }}>
+                <div>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setApkForm(prev => ({ ...prev, published: false }));
+                      setModalLoading(true);
+                      setModalError('');
+                      try {
+                        const res = await fetch('/api/admin/apks', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ ...apkForm, published: false })
+                        });
+                        const json = await res.json();
+                        if (!res.ok || !json.success) {
+                          setModalError(json.error || 'Failed to save draft.');
+                          setModalLoading(false);
+                          return;
+                        }
+                        showToast(`Application "${apkForm.name}" saved as draft.`);
+                        setActiveModal(null);
+                        setModalLoading(false);
+                        loadApks();
+                        loadDashboardData();
+                      } catch (err: any) {
+                        setModalError(err.message || 'Network error.');
+                        setModalLoading(false);
+                      }
+                    }}
+                    disabled={modalLoading}
+                    className="admin-btn admin-btn-secondary"
+                    style={{ fontSize: '0.8125rem' }}
+                  >
+                    Save as Draft
+                  </button>
+                </div>
+                <div style={{ display: 'flex', gap: '0.75rem' }}>
+                  <button type="button" onClick={() => setActiveModal(null)} className="admin-btn admin-btn-secondary">Cancel</button>
+                  <button type="submit" disabled={modalLoading} className="admin-btn admin-btn-primary">
+                    {modalLoading ? 'Saving...' : (apkForm.id ? 'Update Application' : 'Create Application')}
+                  </button>
+                </div>
               </div>
             </form>
           </div>

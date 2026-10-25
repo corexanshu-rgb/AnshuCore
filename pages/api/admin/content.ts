@@ -31,6 +31,41 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     if (section === 'categories') {
+      const { action, oldName, newName } = req.body || {};
+      if (action === 'rename' && oldName && newName) {
+        const cleanOld = String(oldName).trim();
+        const cleanNew = String(newName).trim();
+        const categories = (store.categories && store.categories.length > 0)
+          ? [...store.categories]
+          : ['Education', 'Productivity', 'Developer Tools', 'Utilities', 'Entertainment', 'Tools', 'Other'];
+        const idx = categories.findIndex(c => c.toLowerCase() === cleanOld.toLowerCase());
+        if (idx !== -1) {
+          categories[idx] = cleanNew;
+        } else {
+          categories.push(cleanNew);
+        }
+        store.categories = Array.from(new Set(categories));
+        let updatedCount = 0;
+        store.apks.forEach(apk => {
+          if (apk.category?.toLowerCase() === cleanOld.toLowerCase()) {
+            apk.category = cleanNew;
+            updatedCount++;
+          }
+        });
+        await saveStore(store);
+        await logAdminAction(
+          auth.user.username,
+          'RENAME_CATEGORY',
+          cleanOld,
+          `Renamed category "${cleanOld}" to "${cleanNew}" (${updatedCount} apps updated)`
+        );
+        return res.status(200).json({
+          success: true,
+          categories: store.categories,
+          message: `Category "${cleanOld}" renamed to "${cleanNew}". ${updatedCount} application(s) updated.`
+        });
+      }
+
       if (Array.isArray(data)) {
         store.categories = Array.from(new Set(data.map(String).map(s => s.trim()).filter(Boolean)));
         await saveStore(store);
@@ -45,7 +80,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           categories: store.categories
         });
       }
-      return res.status(400).json({ success: false, error: 'Data must be an array of category strings.' });
+      return res.status(400).json({ success: false, error: 'Data must be an array of category strings or provide a rename action.' });
     } else if (section === 'pages' || section === 'customPages') {
       if (Array.isArray(data)) {
         store.websiteContent.pages = data;
@@ -190,13 +225,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (catIndex === -1) {
         return res.status(404).json({ success: false, error: `Category "${catTarget}" not found.` });
       }
+      const { reassignTo } = req.query;
       // Check foreign key constraint: are any APKs currently assigned to this category?
       const matchedApks = store.apks.filter(a => a.category?.toLowerCase() === catTarget.toLowerCase());
       if (matchedApks.length > 0) {
-        return res.status(400).json({
-          success: false,
-          error: `Cannot delete category "${catTarget}" because ${matchedApks.length} application(s) (${matchedApks.map(a => a.name).join(', ')}) belong to it. Reassign or delete those applications first.`
-        });
+        if (reassignTo && typeof reassignTo === 'string' && reassignTo.trim()) {
+          const targetCat = reassignTo.trim();
+          matchedApks.forEach(apk => {
+            apk.category = targetCat;
+          });
+        } else {
+          return res.status(400).json({
+            success: false,
+            error: `Cannot delete category "${catTarget}" because ${matchedApks.length} application(s) (${matchedApks.map(a => a.name).join(', ')}) belong to it. Reassign or delete those applications first.`
+          });
+        }
       }
       const removed = categories.splice(catIndex, 1)[0];
       store.categories = categories;
